@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 
 	"github.com/0glabs/0g-storage-client/common/blockchain"
 	"github.com/0glabs/0g-storage-client/indexer"
@@ -12,80 +14,51 @@ import (
 )
 
 func main() {
-	fmt.Println("Setting up Go environment...")
-	if err := setupGoEnvironment(); err != nil {
-		fmt.Println("Failed to set up Go environment:", err)
-		return
-	}
-
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Enter Ethereum RPC URL: ")
-	evnRpc, _ := reader.ReadString('\n')
-	evnRpc = evnRpc[:len(evnRpc)-1]
+	// Input manual langsung
+	evmRpc := getInput(reader, "Enter Ethereum RPC URL: ")
+	privateKey := getInput(reader, "Enter your Ethereum private key: ")
+	indRpc := getInput(reader, "Enter Indexer RPC URL: ")
+	filePath := getInput(reader, "Enter file path to upload: ")
 
-	fmt.Print("Enter your Ethereum private key: ")
-	privateKey, _ := reader.ReadString('\n')
-	privateKey = privateKey[:len(privateKey)-1]
-
-	fmt.Print("Enter Indexer RPC URL: ")
-	indRpc, _ := reader.ReadString('\n')
-	indRpc = indRpc[:len(indRpc)-1]
-
-	fmt.Print("Enter file path to upload: ")
-	filePath, _ := reader.ReadString('\n')
-	filePath = filePath[:len(filePath)-1]
-
+	// Konteks untuk request
 	ctx := context.Background()
 
-	w3client := blockchain.MustNewWeb3(evnRpc, privateKey)
+	// Inisialisasi Web3 client
+	w3client := blockchain.MustNewWeb3(evmRpc, privateKey)
 	defer w3client.Close()
 
+	// Inisialisasi Indexer client
 	indexerClient, err := indexer.NewClient(indRpc)
 	if err != nil {
-		fmt.Println("Failed to create indexer client:", err)
-		return
+		log.Fatalf("Failed to create indexer client: %v", err)
 	}
 
+	// Memilih node storage
 	nodes, err := indexerClient.SelectNodes(ctx, 1, 1, nil)
 	if err != nil {
-		fmt.Println("Failed to select storage nodes:", err)
-		return
+		log.Fatalf("Failed to select storage nodes: %v", err)
 	}
 
+	// Membuat uploader
 	uploader, err := transfer.NewUploader(ctx, w3client, nodes)
 	if err != nil {
-		fmt.Println("Failed to create uploader:", err)
-		return
+		log.Fatalf("Failed to create uploader: %v", err)
 	}
 
-	txHash, err := uploader.UploadFile(ctx, filePath)
+	// Upload file
+	txHash, _, err := uploader.UploadFile(ctx, filePath)
 	if err != nil {
-		fmt.Println("Failed to upload file:", err)
-		return
+		log.Fatalf("Failed to upload file: %v", err)
 	}
 
 	fmt.Println("File uploaded successfully! Transaction Hash:", txHash)
 }
 
-func setupGoEnvironment() error {
-	cmds := []string{
-		"go mod init 0g-storage-uploader",
-		"go get github.com/0glabs/0g-storage-client",
-	}
-
-	for _, cmd := range cmds {
-		fmt.Println("Running:", cmd)
-		if err := executeCommand(cmd); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func executeCommand(command string) error {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+// Fungsi untuk membaca input satu baris penuh
+func getInput(reader *bufio.Reader, prompt string) string {
+	fmt.Print(prompt)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input) // Hapus newline
 }
